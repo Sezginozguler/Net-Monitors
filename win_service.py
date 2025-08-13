@@ -2,11 +2,11 @@ import win32serviceutil
 import win32service
 import win32event
 import servicemanager
+import threading
 import subprocess
 import os
 import sys
-import threading
-import time
+import signal
 
 class PingMonService(win32serviceutil.ServiceFramework):
     _svc_name_ = "PingMon"
@@ -17,34 +17,34 @@ class PingMonService(win32serviceutil.ServiceFramework):
         win32serviceutil.ServiceFramework.__init__(self, args)
         self.hWaitStop = win32event.CreateEvent(None, 0, 0, None)
         self.proc = None
-        self.is_running = True
+        self.thread = None
+        self.stop_requested = False
 
     def SvcStop(self):
         self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-        self.is_running = False
-        if self.proc:
-            self.proc.terminate()
+        self.stop_requested = True
+        try:
+            if self.proc:
+                self.proc.terminate()
+        except Exception:
+            pass
         win32event.SetEvent(self.hWaitStop)
 
     def run_monitor(self):
+        python = sys.executable
+        script = os.path.join("C:\\PingMon", "monitor.py")
         try:
-            python = sys.executable
-            script = os.path.join(os.path.dirname(__file__), "monitor.py")
-            self.proc = subprocess.Popen([python, script], cwd=os.path.dirname(script))
-            while self.is_running:
-                time.sleep(1)
+            self.proc = subprocess.Popen([python, script], cwd="C:\\PingMon")
+            self.proc.wait()
         except Exception as e:
-            log_file = os.path.join(os.path.dirname(__file__), "service_error.log")
-            with open(log_file, "w", encoding="utf-8") as f:
-                f.write(f"Error: {str(e)}\n")
-            raise
+            servicemanager.LogErrorMsg(f"PingMon run error: {e}")
 
     def SvcDoRun(self):
-        servicemanager.LogInfoMsg("PingMon Service starting...")
-        # Servis başlatıldı bilgisini hemen gönder
-        threading.Thread(target=self.run_monitor, daemon=True).start()
+        servicemanager.LogInfoMsg("PingMon service starting...")
+        self.thread = threading.Thread(target=self.run_monitor)
+        self.thread.start()
         win32event.WaitForSingleObject(self.hWaitStop, win32event.INFINITE)
-        servicemanager.LogInfoMsg("PingMon Service stopped.")
+        servicemanager.LogInfoMsg("PingMon service stopped.")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     win32serviceutil.HandleCommandLine(PingMonService)
