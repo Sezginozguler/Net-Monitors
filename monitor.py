@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 # monitor.py – 6h + 1h speed test + <50 Mbps alarm
+import sys
+if "--test" in sys.argv:
+    print("Test modunda çalışıyor...")
+    import subprocess
+    result = subprocess.run(["ping", "-n", "1", "google.com"], capture_output=True, text=True)
+    print(result.stdout)
+    sys.exit(0)
 import os, time, threading, asyncio
 from datetime import datetime
 from pathlib import Path
