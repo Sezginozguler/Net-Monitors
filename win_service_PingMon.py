@@ -9,7 +9,7 @@ import subprocess
 import logging
 
 # Servis tanımı
-class PigMonService(win32serviceutil.ServiceFramework):
+class PingMonService(win32serviceutil.ServiceFramework):
     _svc_name_ = "PingMon"
     _svc_display_name_ = "PingMon Monitor"
     _svc_description_ = "Ping & Speed Monitor via PigMon – Windows Service"
@@ -51,4 +51,4 @@ class PigMonService(win32serviceutil.ServiceFramework):
         )
 
 if __name__ == "__main__":
-    win32serviceutil.HandleCommandLine(PigMonService)
+    win32serviceutil.HandleCommandLine(PingMonService)
