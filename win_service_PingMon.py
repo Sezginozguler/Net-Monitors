@@ -10,8 +10,8 @@ import logging
 
 # Servis tanımı
 class PigMonService(win32serviceutil.ServiceFramework):
-    _svc_name_ = "PigMon"
-    _svc_display_name_ = "PigMon Monitor"
+    _svc_name_ = "PingMon"
+    _svc_display_name_ = "PingMon Monitor"
     _svc_description_ = "Ping & Speed Monitor via PigMon – Windows Service"
 
     def __init__(self, args):
