@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # monitor.py – NetWebo Ping & Speed + Telegram + 6h Speed + 3s Ping
 import os, json, time, threading, asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 from pythonping import ping
@@ -46,18 +46,18 @@ def send_html_email(subject, html_body):
         with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as s:
             s.login(EMAIL_SENDER, EMAIL_PASSWORD)
             s.sendmail(EMAIL_SENDER, EMAIL_RECEIVER, msg.as_string())
-        log_write("✅ HTML e-posta gönderildi")
+        log_write("HTML e-posta gönderildi")
     except Exception as e:
-        log_write(f"❌ E-posta hatası: {e}")
+        log_write(f"E-posta hatası: {e}")
 
 async def tg_send(text):
     if not bot:
         return
     try:
         await bot.send_message(chat_id=TG_CHAT_ID, text=text, parse_mode="HTML")
-        log_write("📤 Telegram mesajı gönderildi")
+        log_write("Telegram mesajı gönderildi")
     except Exception as e:
-        log_write(f"❌ Telegram hatası: {e}")
+        log_write(f"Telegram hatası: {e}")
 
 def run_speedtest():
     def do():
@@ -71,15 +71,15 @@ def run_speedtest():
         with concurrent.futures.ThreadPoolExecutor() as ex:
             d, u, p = ex.submit(do).result(timeout=60)
     except Exception as e:
-        log_write(f"❌ Speedtest hatası: {e}")
+        log_write(f"Speedtest hatası: {e}")
         return
-    msg = f"📡 <b>Speed Test (6h)</b>\n⬇️ {d} Mbps\n⬆️ {u} Mbps\n🏓 {p} ms\n🕒 {datetime.now():%d.%m.%Y %H:%M}"
+    msg = f"<b>Speed Test (6h)</b>\nDownload: {d} Mbps\nUpload: {u} Mbps\nPing: {p} ms\nZaman: {datetime.now():%d.%m.%Y %H:%M}"
     log_write(msg.replace("<b>","").replace("</b>",""))
     asyncio.run(tg_send(msg))
     html = f"""
     <html><body style='font-family:Arial;background:#f4f4f4;'>
       <div style='max-width:600px;margin:30px auto;background:#fff;padding:20px;border-radius:8px;'>
-        <h2 style='color:#004e92;'>📈 6-Saatlik SpeedTest</h2>
+        <h2 style='color:#004e92;'>6-Saatlik SpeedTest</h2>
         <table border='1' cellpadding='8'><tr><th>Ölçüm</th><th>Değer</th></tr>
         <tr><td>Download</td><td><b>{d} Mbps</b></td></tr>
         <tr><td>Upload</td><td><b>{u} Mbps</b></td></tr>
@@ -92,29 +92,28 @@ def run_speedtest():
     send_html_email("6-Saatlik SpeedTest Raporu", html)
 
 def send_daily_ping_report():
-    bugun = datetime.now().date()
     g, u = ping_stats["günlük_gönderilen"], ping_stats["günlük_ulaşan"]
     t = g - u
     kayip = (t / g * 100) if g else 0
-    msg = f"📊 <b>Günlük Ping Özeti</b>\n📤 {g} ping\n✅ {u} başarılı\n❌ {t} timeout\n📉 %{kayip:.2f} kayıp"
+    msg = f"<b>Günlük Ping Özeti</b>\nToplam: {g}\nBaşarılı: {u}\nTimeout: {t}\nPaket Kaybı: %{kayip:.2f}"
     log_write(msg.replace("<b>","").replace("</b>",""))
     asyncio.run(tg_send(msg))
     html = f"""
     <html><body style='font-family:Arial;background:#f4f4f4;'>
       <div style='max-width:600px;margin:30px auto;background:#fff;padding:20px;border-radius:8px;'>
-        <h2 style='color:#004e92;'>📊 Günlük Ping Özeti</h2>
+        <h2 style='color:#004e92;'>Günlük Ping Özeti</h2>
         <table border='1' cellpadding='8'><tr><th>Metrik</th><th>Değer</th></tr>
         <tr><td>Toplam Ping</td><td><b>{g}</b></td></tr>
-        <tr><td>Başarılı</td><td style='color:green'><b>{u}</b></td></tr>
-        <tr><td>Timeout</td><td style='color:red'><b>{t}</b></td></tr>
-        <tr><td>Paket Kaybı</td><td style='color:red'><b>%{kayip:.2f}</b></td></tr>
+        <tr><td>Başarılı</td><td><b>{u}</b></td></tr>
+        <tr><td>Timeout</td><td><b>{t}</b></td></tr>
+        <tr><td>Paket Kaybı</td><td><b>%{kayip:.2f}</b></td></tr>
         </table>
         <p style='font-size:12px;color:#555;'>{datetime.now():%d.%m.%Y %H:%M}</p>
       </div>
     </body></html>
     """
     send_html_email("Günlük Ping Raporu", html)
-    ping_stats.update({"gönderilen": 0, "ulaşan": 0, "gün": datetime.now().date()})
+    ping_stats.update({"günlük_gönderilen": 0, "günlük_ulaşan": 0, "gün": datetime.now().date()})
 
 def continuous_ping():
     timeout_counter = 0
@@ -125,16 +124,16 @@ def continuous_ping():
             if resp.success():
                 ping_stats["günlük_ulaşan"] += 1
                 timeout_counter = 0
-                log_write(f"✅ Reply from {TARGET}: {resp.rtt_avg_ms:.2f} ms")
+                log_write(f"Reply from {TARGET}: {resp.rtt_avg_ms:.2f} ms")
             else:
                 timeout_counter += 1
-                log_write(f"❌ Timeout ({timeout_counter}/5)")
+                log_write(f"Timeout ({timeout_counter}/5)")
                 if timeout_counter == 5:
-                    msg = f"🚨 <b>{TARGET}</b> 5 kez timeout!"
+                    msg = f"<b>{TARGET}</b> 5 kez timeout!"
                     asyncio.run(tg_send(msg))
                     timeout_counter = 0
         except Exception as e:
-            log_write(f"❌ Ping hatası: {e}")
+            log_write(f"Ping hatası: {e}")
         time.sleep(3)
 
 def scheduler_loop():
@@ -145,7 +144,7 @@ def scheduler_loop():
         time.sleep(1)
 
 if __name__ == "__main__":
-    log_write("🚀 Monitor + Telegram başlatıldı")
+    log_write("Monitor + Telegram başlatıldı")
     threading.Thread(target=continuous_ping, daemon=True).start()
     threading.Thread(target=scheduler_loop, daemon=True).start()
     while True:
