@@ -1,6 +1,7 @@
 pythonping
+python-dotenv
 speedtest-cli
-dotenv
 schedule
 python-telegram-bot==20.7
 pywin32
+
