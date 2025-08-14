@@ -8,17 +8,32 @@ monitor.py — Ping ve Speedtest izleme (Windows servis uyumlu, emojisiz)
 - Günlük özet rapor (paket kaybı vs.)
 - Log dosyasına yazım (UTF-8), konsola güvenli çıktı
 - Telegram bildirimleri OPSİYONEL (token/chat_id yoksa devre dışı)
+- E-Posta bildirimleri OPSİYONEL (.env ile aç/kapat)
 
 Gerekli ortam değişkenleri (.env):
-- TARGET=google.com                # ping hedefi
-- LOG_FILE=C:\PigMon\ping_speed_log.txt
-- PING_INTERVAL_SECONDS=3
-- PING_TIMEOUT_SECONDS=1
-- TIMEOUT_ALERT_THRESHOLD=5
-- SPEEDTEST_EVERY_HOURS=6
-- DAILY_REPORT_TIME=11:40          # HH:MM
-- TG_BOT_TOKEN=...                 # opsiyonel
-- TG_CHAT_ID=...                   # opsiyonel (int ya da string)
+# ---- Ping ----
+TARGET=8.8.8.8
+PING_INTERVAL_SECONDS=3
+PING_TIMEOUT_SECONDS=1
+TIMEOUT_ALERT_THRESHOLD=5
+# ---- Speedtest ----
+SPEEDTEST_EVERY_HOURS=6
+# ---- Günlük Rapor ----
+DAILY_REPORT_TIME=11:40           # HH:MM
+# ---- Log ----
+LOG_FILE=C:\PigMon\ping_speed_log.txt
+# ---- Telegram (opsiyonel) ----
+TG_BOT_TOKEN=
+TG_CHAT_ID=
+# ---- Mail (opsiyonel) ----
+MAIL_ENABLED=True
+MAIL_SMTP_SERVER=smtp.gmail.com
+MAIL_SMTP_PORT=587
+MAIL_USE_TLS=True                 # True: STARTTLS 587, False: SSL 465 (portu uygun verin)
+MAIL_FROM=ornekmail@gmail.com
+MAIL_TO=hedefmail@gmail.com
+MAIL_USER=ornekmail@gmail.com
+MAIL_PASS=uygulama_sifresi
 """
 
 import os
@@ -29,6 +44,9 @@ import threading
 import concurrent.futures
 from datetime import datetime
 from pathlib import Path
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 from dotenv import load_dotenv
 from pythonping import ping
@@ -48,14 +66,20 @@ except Exception:
 # -------- Yapılandırma --------
 load_dotenv()
 
+def _get_bool(name: str, default: bool) -> bool:
+    v = os.getenv(name)
+    if v is None:
+        return default
+    return str(v).strip().lower() in ("1", "true", "yes", "on")
+
 TARGET = os.getenv("TARGET", "google.com")
 
 # Log yolu (varsayılan C:\PigMon\ping_speed_log.txt)
 default_log = r"C:\PigMon\ping_speed_log.txt"
 LOG_FILE = Path(os.path.expanduser(os.getenv("LOG_FILE", default_log)))
 
-PING_INTERVAL_SECONDS = int(os.getenv("PING_INTERVAL_SECONDS", "3") or 3)
-PING_TIMEOUT_SECONDS  = int(os.getenv("PING_TIMEOUT_SECONDS", "1") or 1)
+PING_INTERVAL_SECONDS   = int(os.getenv("PING_INTERVAL_SECONDS", "3") or 3)
+PING_TIMEOUT_SECONDS    = int(os.getenv("PING_TIMEOUT_SECONDS", "1") or 1)
 TIMEOUT_ALERT_THRESHOLD = int(os.getenv("TIMEOUT_ALERT_THRESHOLD", "5") or 5)
 
 SPEEDTEST_EVERY_HOURS = int(os.getenv("SPEEDTEST_EVERY_HOURS", "6") or 6)
@@ -77,6 +101,16 @@ if TG_BOT_TOKEN and TG_CHAT_ID and Bot:
     except Exception:
         bot = None  # token hatalıysa telegram'ı kapat
 
+# Mail opsiyonel
+MAIL_ENABLED     = _get_bool("MAIL_ENABLED", False)
+MAIL_SMTP_SERVER = os.getenv("MAIL_SMTP_SERVER", "smtp.gmail.com")
+MAIL_SMTP_PORT   = int(os.getenv("MAIL_SMTP_PORT", "587") or 587)
+MAIL_USE_TLS     = _get_bool("MAIL_USE_TLS", True)  # True: STARTTLS, False: SSL
+MAIL_FROM        = os.getenv("MAIL_FROM", "")
+MAIL_TO          = os.getenv("MAIL_TO", "")
+MAIL_USER        = os.getenv("MAIL_USER", "")
+MAIL_PASS        = os.getenv("MAIL_PASS", "")
+
 def log_write(text: str) -> None:
     """Hem ekrana (UTF-8) hem dosyaya güvenli yaz."""
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -97,7 +131,6 @@ def log_write(text: str) -> None:
         with open(LOG_FILE, "a", encoding="utf-8", errors="replace") as f:
             f.write(line + "\n")
     except Exception:
-        # dosyaya yazamazsa sessiz geç
         pass
 
 # ---- Telegram güvenli gönderim (opsiyonel) ----
@@ -120,6 +153,42 @@ def tg_send(msg: str) -> None:
             log_write(f"Telegram gönderim hatası (loop): {e}")
     except Exception as e:
         log_write(f"Telegram gönderim hatası: {e}")
+
+# ---- Mail gönderimi (opsiyonel) ----
+def send_mail(subject: str, body_text: str = "", body_html: str | None = None) -> None:
+    if not MAIL_ENABLED:
+        return
+    if not (MAIL_FROM and MAIL_TO and MAIL_USER and MAIL_PASS and MAIL_SMTP_SERVER and MAIL_SMTP_PORT):
+        log_write("Mail ayarları eksik; gönderim atlandı.")
+        return
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = MAIL_FROM
+        msg["To"]      = MAIL_TO
+
+        if body_text:
+            msg.attach(MIMEText(body_text, "plain", "utf-8"))
+        if body_html:
+            msg.attach(MIMEText(body_html, "html", "utf-8"))
+
+        if MAIL_USE_TLS:
+            # STARTTLS (587)
+            with smtplib.SMTP(MAIL_SMTP_SERVER, MAIL_SMTP_PORT, timeout=30) as s:
+                s.ehlo()
+                s.starttls()
+                s.login(MAIL_USER, MAIL_PASS)
+                s.sendmail(MAIL_FROM, [MAIL_TO], msg.as_string())
+        else:
+            # SSL (465)
+            with smtplib.SMTP_SSL(MAIL_SMTP_SERVER, MAIL_SMTP_PORT, timeout=30) as s:
+                s.login(MAIL_USER, MAIL_PASS)
+                s.sendmail(MAIL_FROM, [MAIL_TO], msg.as_string())
+
+        log_write("E-posta gönderildi")
+    except Exception as e:
+        log_write(f"E-posta gönderim hatası: {e}")
 
 # ---- Durum sayaçları ----
 ping_stats = {
@@ -145,15 +214,31 @@ def run_speedtest() -> None:
         log_write(f"Speedtest hatası: {e}")
         return
 
-    msg_text = (
+    text = (
         "Speed Test Sonucu\n"
         f"Download: {down} Mbps\n"
         f"Upload:   {up} Mbps\n"
         f"Ping:     {p} ms\n"
         f"Zaman:    {datetime.now():%d.%m.%Y %H:%M}"
     )
-    log_write(msg_text)
-    tg_send(msg_text)
+    log_write(text)
+    tg_send(text)
+
+    html = f"""
+    <html><body style="font-family:Arial;background:#f4f4f4;">
+      <div style="max-width:600px;margin:30px auto;background:#fff;padding:20px;border-radius:8px;">
+        <h2 style="color:#004e92;">SpeedTest</h2>
+        <table border="1" cellpadding="8" cellspacing="0">
+          <tr><th>Ölçüm</th><th>Değer</th></tr>
+          <tr><td>Download</td><td><b>{down} Mbps</b></td></tr>
+          <tr><td>Upload</td><td><b>{up} Mbps</b></td></tr>
+          <tr><td>Ping</td><td><b>{p} ms</b></td></tr>
+        </table>
+        <p style="font-size:12px;color:#555;">{datetime.now():%d.%m.%Y %H:%M}</p>
+      </div>
+    </body></html>
+    """
+    send_mail("SpeedTest Raporu", body_text=text, body_html=html)
 
 # ---- Günlük özet ----
 def send_daily_ping_report() -> None:
@@ -162,15 +247,33 @@ def send_daily_ping_report() -> None:
     timeouts = total - ok
     loss = (timeouts / total * 100) if total else 0.0
 
-    msg_text = (
+    text = (
         "Günlük Ping Özeti\n"
         f"Toplam:   {total}\n"
         f"Başarılı: {ok}\n"
         f"Timeout:  {timeouts}\n"
-        f"Paket Kaybı: %{loss:.2f}"
+        f"Paket Kaybı: %{loss:.2f}\n"
+        f"Zaman:    {datetime.now():%d.%m.%Y %H:%M}"
     )
-    log_write(msg_text)
-    tg_send(msg_text)
+    log_write(text)
+    tg_send(text)
+
+    html = f"""
+    <html><body style="font-family:Arial;background:#f4f4f4;">
+      <div style="max-width:600px;margin:30px auto;background:#fff;padding:20px;border-radius:8px;">
+        <h2 style="color:#004e92;">Günlük Ping Özeti</h2>
+        <table border="1" cellpadding="8" cellspacing="0">
+          <tr><th>Metrik</th><th>Değer</th></tr>
+          <tr><td>Toplam Ping</td><td><b>{total}</b></td></tr>
+          <tr><td>Başarılı</td><td><b>{ok}</b></td></tr>
+          <tr><td>Timeout</td><td><b>{timeouts}</b></td></tr>
+          <tr><td>Paket Kaybı</td><td><b>%{loss:.2f}</b></td></tr>
+        </table>
+        <p style="font-size:12px;color:#555;">{datetime.now():%d.%m.%Y %H:%M}</p>
+      </div>
+    </body></html>
+    """
+    send_mail("Günlük Ping Raporu", body_text=text, body_html=html)
 
     # sayaçları sıfırla
     ping_stats["day"]  = datetime.now().date()
@@ -181,7 +284,7 @@ def send_daily_ping_report() -> None:
 def continuous_ping() -> None:
     timeout_counter = 0
     while True:
-        # gün değiştiyse sayaçları sıfırla
+        # gün değiştiyse otomatik günlük rapor ve reset
         if datetime.now().date() != ping_stats["day"]:
             send_daily_ping_report()
 
@@ -196,14 +299,17 @@ def continuous_ping() -> None:
                 timeout_counter += 1
                 log_write(f"Timeout ({timeout_counter}/{TIMEOUT_ALERT_THRESHOLD})")
                 if timeout_counter >= TIMEOUT_ALERT_THRESHOLD:
-                    tg_send(f"{TARGET} için ardışık {TIMEOUT_ALERT_THRESHOLD} timeout")
+                    alert_text = f"{TARGET} için ardışık {TIMEOUT_ALERT_THRESHOLD} timeout."
+                    tg_send(alert_text)
+                    # basit düz metin e-posta (HTML’siz)
+                    send_mail("Timeout Uyarısı", body_text=alert_text, body_html=None)
                     timeout_counter = 0
         except Exception as e:
             log_write(f"Ping hatası: {e}")
 
         time.sleep(PING_INTERVAL_SECONDS)
 
-# ---- Zamanlayıcı döngüsü (speedtest + günlük özet) ----
+# ---- Zamanlayıcı döngüsü (speedtest + günlük saatli rapor) ----
 def scheduler_loop() -> None:
     last_speedtest = 0.0
     last_daily_sent_date = None
@@ -234,10 +340,8 @@ def scheduler_loop() -> None:
 if __name__ == "__main__":
     log_write("Monitor başlatıldı")
     log_write(f"Ping hedefi: {TARGET}")
-    if bot and TG_CHAT_ID:
-        log_write("Telegram bildirimi: aktif")
-    else:
-        log_write("Telegram bildirimi: kapalı (TOKEN/CHAT_ID yok ya da kütüphane yok)")
+    log_write(f"Telegram: {'aktif' if (bot and TG_CHAT_ID) else 'kapalı'}")
+    log_write(f"Mail: {'aktif' if MAIL_ENABLED else 'kapalı'}")
 
     # Ping ve zamanlayıcı paralel
     threading.Thread(target=continuous_ping, daemon=True).start()
