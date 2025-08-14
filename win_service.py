@@ -22,8 +22,12 @@ class PingMonitorService(win32serviceutil.ServiceFramework):
 
     def SvcDoRun(self):
         servicemanager.LogInfoMsg("Ping Monitor Service Başladı.")
-        self.proc = subprocess.Popen(["python", "monitor_bot.py"], cwd=os.path.dirname(__file__))
+        self.proc = subprocess.Popen(
+    [os.path.join(os.path.dirname(__file__), "venv", "Scripts", "python.exe"), "monitor.py"],
+    cwd=os.path.dirname(__file__)
+)
         win32event.WaitForSingleObject(self.hWaitStop, win32event.INFINITE)
 
 if __name__ == '__main__':
+
     win32serviceutil.HandleCommandLine(PingMonitorService)
