@@ -7,8 +7,8 @@ import os
 import sys
 
 class NetMonitorService(win32serviceutil.ServiceFramework):
-    _svc_name_ = "NetMonitorService"
-    _svc_display_name_ = "Net Monitor (Ping + Speedtest + Alerts)"
+    _svc_name_ = "PingMon"
+    _svc_display_name_ = "PingMon (Ping + Speedtest + Alerts)"
     _svc_description_ = "Runs monitor.py as a Windows service."
 
     def __init__(self, args):
