@@ -3,4 +3,4 @@ speedtest-cli
 python-dotenv
 schedule
 python-telegram-bot==20.7
-pywin32; platform_system == "Windows"
+pywin32
